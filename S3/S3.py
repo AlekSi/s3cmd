@@ -10,6 +10,7 @@ import errno
 import httplib
 import logging
 import mimetypes
+import socket
 import re
 from logging import debug, info, warning, error
 from stat import ST_SIZE
@@ -746,12 +747,24 @@ class S3(object):
                 else:
                     data = buffer
                 md5_hash.update(data)
-                conn.c.send(data)
+
+                while True:
+                    try:
+                        conn.c.send(data)
+                        break
+                    except socket.error, e:
+                        if e.errno == errno.EAGAIN:
+                            debug("%r, retrying" % e)
+                            time.sleep(0.1)
+                            continue
+                        raise
+
                 if self.config.progress_meter:
                     progress.update(delta_position = len(data))
                 size_left -= len(data)
                 if throttle:
                     time.sleep(throttle)
+
             md5_computed = md5_hash.hexdigest()
             response = {}
             http_response = conn.c.getresponse()
